@@ -1,26 +1,7 @@
 import cv2
 import numpy as np
-import os, sys
-import serial
-import time
 
-# 시리얼 장치 연결
-# 보레이드 9600, 장치 위치 ttyUSB0
-ser = serial.Serial('/dev/ttyACM0',9600, timeout = 5)
 
-def run():
-    #시리얼 쓰기
-    ser.write(bytes(bytearray([0x01,0x02,0x03,0x04,0x05])))
-    while True:
-        # 시리얼 읽기 (5바이트씩 읽음)
-        line = ser.read(5)
-        if len(line) == 0:
-                break;
-        # 헥사 코드로 출력
-        hex_list = ["{:x}".format(ord(c)) for c in line];
-        print ''.join(hex_list)
-while True:
-    run();
 
 def DetectBlueLine(src):
 
