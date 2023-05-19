@@ -1,19 +1,19 @@
 import cv2
 import numpy as np
+import serial
 
+port = '/dev/ttyACM0'
+ser = serial.Serial(port, 57600)
 
-
-def DetectBlueLine(src):
-
-    #HSV로 변환후 파란색만 추출
+def detect_blue_line(src):
+    # HSV로 변환 후 파란색만 추출
     b_l_threshold = (100, 100, 100)
     b_h_threshold = (150, 255, 255)
     hsv_img = cv2.cvtColor(src, cv2.COLOR_BGR2HSV)
     b_mask = cv2.inRange(hsv_img, b_l_threshold, b_h_threshold)
     blue_img = cv2.bitwise_and(src, src, mask=b_mask)
 
-    # GrayScale 로 변환
-    
+    # Grayscale로 변환
     grayscale = cv2.cvtColor(blue_img, cv2.COLOR_BGR2GRAY)
 
     # 모서리 검출
@@ -67,39 +67,56 @@ def DetectBlueLine(src):
 
 
 cam = cv2.VideoCapture(0)
+frame_rate = 10
 
 if not cam.isOpened():
     print("Could not open webcam")
     exit()
 
-while cam.isOpened():
+st = b'30'
+cpst = b''
 
+cam.set(cv2.CAP_PROP_FPS, frame_rate)
+while cam.isOpened():
     status, frame = cam.read()
+    frame = cv2.flip(frame, 0)
 
     if status:
         frame = cv2.resize(frame, (640, 360))
-        cv2.imshow('test', DetectBlueLine(frame)[0])
-        l, r = DetectBlueLine(frame)[1], DetectBlueLine(frame)[2]
+        cv2.imshow('test', detect_blue_line(frame)[0])
+        l, r = detect_blue_line(frame)[1], detect_blue_line(frame)[2]
 
         if abs(l) <= 155 or abs(r) <= 155:
+            if cpst != st:
+                ser.write(st)
+                print(st)
+            cpst = st
             if l == 0 or r == 0:
-                if l < 0 or r < 0:
-                    print('left')
-                elif l > 0 or r > 0:
-                    print('right')
-            elif abs(l - 15) > abs(r):
-                print('right')
-            elif abs(r + 15) > abs(l):
-                print('left')
+                if l < 0 or r < 0:  # left
+                    st = b'\x34'
+                elif l > 0 or r > 0:  # right
+                    st = b'\x33'
+            elif abs(l - 15) > abs(r):  # right
+                st = b'\x33'
+            elif abs(r + 15) > abs(l):  # left
+                st = b'\x35'
             else:
-                print('go')
+                if st != b'go':
+                    st = b'\x31'
         else:
             if l > 155 or r > 155:
                 print('hard right')
+                ser.write(b'\x33')
             elif l < -155 or r < -155:
                 print('hard left')
+                ser.write(b'\x34')
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
+        ser.close()
         break
+    if ser.in_waiting > 0:
+        data = ser.readline()
+        print("Waiting Data:", data.decode().strip())
+    print("any k")
 
 cv2.destroyAllWindows()
