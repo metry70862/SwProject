@@ -1,1 +1,222 @@
+import cv2
+import numpy as np
+import serial
+import math
 
+port = '/dev/ttyACM0'
+ser = serial.Serial(port, 57600)
+
+MinHeight = 300
+MaxHeight = 310
+
+old_R = 0
+old_L = 0
+
+def detect_blue_line(src):
+    # HSV로 변환 후 파란색만 추출
+    b_l_threshold = (100, 100, 100)
+    b_h_threshold = (150, 255, 255)
+    hsv_img = cv2.cvtColor(src, cv2.COLOR_BGR2HSV)
+    b_mask = cv2.inRange(hsv_img, b_l_threshold, b_h_threshold)
+    blue_img  = cv2.bitwise_and(src, src, mask=b_mask)
+
+    # Grayscale로 변환
+    grayscale = cv2.cvtColor(blue_img, cv2.COLOR_BGR2GRAY)
+    # 모서리 검출
+    can = cv2.Canny(grayscale, 50, 200, None, 3)
+
+    height = can.shape[0]
+    rectangle = np.array([[(0, height), (120, 50), (520, 50), (640, height)]])
+    mask = np.zeros_like(can)
+    cv2.fillPoly(mask, rectangle, 255)
+    masked_image = cv2.bitwise_and(can, mask)
+    ccan = cv2.cvtColor(masked_image, cv2.COLOR_GRAY2BGR)
+    
+    mask = np.zeros_like(can)
+    rectangle = np.array([[(0,MinHeight), (0, MaxHeight), (640, MinHeight), (640, MaxHeight)]])
+    cv2.fillPoly(mask, rectangle, 255)
+    roi = cv2.bitwise_and(grayscale, mask)
+    #cv2.imshow("ccan", ccan)
+    
+    contours, hei = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    objs = list()
+    
+    totalArea = 0
+    
+    for x in contours:
+        totalArea += cv2.contourArea(x);
+        objs.append(x);
+    #mask = np.zeros_like(can)
+    #for cnt in contours:
+    #    cv2.drawContours(mask, [cnt], 0, 255, cv2.FILLED)
+    #cv2.imshow("Contours", mask)
+    
+    #moments = list()
+    #for cnt in contours:
+    #    moments.append(cv2.moments(cnt))
+    #moments.sort(key=lambda x : x["m00"])
+    
+    objs.sort(key=lambda x : cv2.contourArea(x))
+    cx = 0.0
+    cy = 0.0
+    if len(contours) > 0: 
+        c0 = contours[-1];
+        leftMost = tuple(c0[c0[:,:,0].argmin()][0])
+        rightMost = tuple(c0[c0[:,:,0].argmax()][0])
+        topMost = tuple(c0[c0[:,:,1].argmin()][0])
+        bottomMost = tuple(c0[c0[:,:,1].argmax()][0])
+        
+        cx = (int)((leftMost[0] + rightMost[0]) / 2);
+        cy = (int)((topMost[1] + bottomMost[1]) / 2);
+        
+        cv2.circle(roi, (cx,cy), 2, (255, 255 ,255))
+    cv2.imshow("roi", roi)
+    #CHANGED
+    
+#    line_arr = cv2.HoughLinesP(masked_image, 1, np.pi / 180, 20, minLineLength=10, maxLineGap=75)
+
+    # 중앙을 기준으로 오른쪽, 왼쪽 직선 분리
+#    line_R = np.empty((0, 5), int)
+#    line_L = np.empty((0, 5), int)
+#    if line_arr is not None:
+#        line_arr2 = np.empty((len(line_arr), 5), int)
+#        for i in range(0, len(line_arr)):
+#            l = line_arr[i][0]
+#            line_arr2[i] = np.append(line_arr[i], np.array((np.arctan2(l[1] - l[3], l[0] - l[2]) * 180) / np.pi))
+#           if line_arr2[i][1] > line_arr2[i][3]:
+#                temp = line_arr2[i][0], line_arr2[i][1]
+#                line_arr2[i][0], line_arr2[i][1] = line_arr2[i][2], line_arr2[i][3]
+#                line_arr2[i][2], line_arr2[i][3] = temp
+#            if line_arr2[i][0] < 320 and (170 > abs(line_arr2[i][4]) > 95):
+#               line_L = np.append(line_L, line_arr2[i])
+#           elif line_arr2[i][0] > 320 and (170 > abs(line_arr2[i][4]) > 95):
+#                line_R = np.append(line_R, line_arr2[i])
+    
+    # line[0]: startPoint X
+    # line[1]: startPoint Y
+    # line[2]: endPoint X
+    # line[3]: endPoint Y
+    # line[4]: degree
+#    line_L = line_L.reshape(int(len(line_L) / 5), 5)
+#    line_R = line_R.reshape(int(len(line_R) / 5), 5)
+
+    # point at Y 100
+    # 100 - line[1] = (line[3] - line[1]) / (line[2] - line[0])(x - line[0])
+    
+    # 중앙과 가까운 오른쪽, 왼쪽 선을 최종 차선으로 인식
+ #   try:
+ #       line_L = line_L[line_L[:, 0].argsort()[-1]]
+ #       degree_L = line_L[4]
+ #      cv2.line(ccan, (line_L[0], line_L[1]), (line_L[2], line_L[3]), (255, 255, 255), 3, cv2.LINE_AA)
+ #   except:
+ #       degree_L = 0
+ #   try:
+ #       line_R = line_R[line_R[:, 0].argsort()[0]]
+ #       degree_R = line_R[4]
+ #       cv2.line(ccan, (line_R[0], line_R[1]), (line_R[2], line_R[3]), (255, 255, 255), 3, cv2.LINE_AA)
+ #   except:
+ #       degree_R = 0
+
+    # 원본에 합성
+    outcome = cv2.addWeighted(src, 1, ccan, 1, 0)
+    return outcome, cx, cy, totalArea
+
+
+cam = cv2.VideoCapture(0)
+frame_rate = 10
+
+if not cam.isOpened():
+    print("Could not open webcam")
+    exit()
+
+st = b'30'
+cpst = b''
+
+cam.set(cv2.CAP_PROP_FPS, frame_rate)
+while cam.isOpened():
+    status, frame = cam.read()
+    frame = cv2.flip(frame, 0)
+    
+    vals = [170, 170]
+    if status:  
+        frame = cv2.resize(frame, (640, 360))
+        
+        f, cx, cy, ta = detect_blue_line(frame)#f = img, cx = dot_pos, cy = not use(line), ta = total area
+        
+        cv2.imshow('test', f)
+        #l, r = detect_blue_line(frame)[1], detect_blue_line(frame)[2]
+        
+        # if total area > 1000
+        print("\n")
+        print("cx: " + str(cx) + " / cy: " + str(cy) + " / ta: " + str(ta))
+        if ta > 1000:
+            # loding / unloding
+            
+            ser.write(b'L') #loding
+            ser.write(b'U') #unloding
+            
+            #data = ser.readline(1)
+            #if(data == "OK"): #loding / unloding end
+
+        
+        elif cx == 0 and cy == 0:
+            vals[0] = old_R
+            vals[1] = old_L
+            
+            ser.write(b'M')
+            ser.write(bytes(bytearray(vals)))
+            print(bytes(bytearray(vals)))
+            print("\n")
+        else :
+            # move
+            weight = 0.3
+            
+            vals[0] = vals[0] + int((cx - 320) * weight)
+            vals[1] = vals[1] - int((cx - 320) * weight)
+            print("vals[0] = " + str(vals[0]) + "   vals[1] = ", str(vals[1]))
+            #print("\n")
+            
+            if(vals[0] < 0): vals[0] = 0
+            elif(vals[0] > 255): vals[0] = 255
+            if(vals[1] < 100): vals[1] = 0
+            elif(vals[1] > 255): vals[1] = 255
+            
+            old_R = vals[0]
+            old_L = vals[1]
+            
+            ser.write(b'M')
+            ser.write(bytes(bytearray(vals)))
+            print(bytes(bytearray(vals)))
+            print("\n")
+            #data = ser.read(1)
+            #print(data)
+            #data = ser.read(1)#ser.readline(time_out)
+            #print(data)
+            
+
+        #if abs(l) <= 155 or abs(r) <= 155:
+        #    if cpst != st:
+        #        ser.write(st)
+            #print(st)
+            #cpst = st
+            #if l == 0 or r == 0:
+            #    if l > 0 or r > 0:  # right
+            #        st = b'\x33'
+            #    elif l < 0 or r < 0:  # left
+            #        st = b'\x34'
+            #elif abs(l - 30) > abs(r):  # right
+            #    st = b'\x33'
+            #elif abs(r + 30) > abs(l):  # left
+            #    st = b'\x34'
+            #else:
+            #    st = b'\x31'
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        ser.close()
+        break
+    #if ser.in_waiting > 0:
+    #    data = ser.readline()
+    #    print("Waiting Data:", data.decode().strip())
+    
+
+cv2.destroyAllWindows() 
