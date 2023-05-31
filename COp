@@ -7,6 +7,7 @@ import math
 
 port = '/dev/ttyACM0'
 ser = serial.Serial(port, 57600)
+ser.timeout = 0.01 
 
 MinHeight = 300
 MaxHeight = 310
@@ -17,7 +18,7 @@ old_L = 0
 
 def detect_blue_line(src):
     # HSV로 변환 후 파란색만 추출
-    b_l_threshold = (100, 100, 100)
+    b_l_threshold = (100, 100, 70)
     b_h_threshold = (150, 255, 255)
     hsv_img = cv2.cvtColor(src, cv2.COLOR_BGR2HSV)
     b_mask = cv2.inRange(hsv_img, b_l_threshold, b_h_threshold)
@@ -59,7 +60,7 @@ def detect_blue_line(src):
         rightMost = tuple(c0[c0[:, :, 0].argmax()][0])
         topMost = tuple(c0[c0[:, :, 1].argmin()][0])
         bottomMost = tuple(c0[c0[:, :, 1].argmax()][0])
-
+    
         cx = (int)((leftMost[0] + rightMost[0]) / 2);
         cy = (int)((topMost[1] + bottomMost[1]) / 2);
 
@@ -79,34 +80,62 @@ if not cam.isOpened():
     print("Could not open webcam")
     exit()
 
-st = b'30'
-cpst = b''
-
+st = 0
+lll=0
+vvals=[10,10]
 cam.set(cv2.CAP_PROP_FPS, frame_rate)
 while cam.isOpened():
     status, frame = cam.read()
     frame = cv2.flip(frame, 0)
-
     vals = [170, 170]
+    
     if status:
         frame = cv2.resize(frame, (640, 360))
 
         f, cx, cy, ta = detect_blue_line(frame)  # f = img, cx = dot_pos, cy = not use(line), ta = total area
 
         cv2.imshow('test', f)
-
+        
 
         # if total area > 1000
         print("\n")
         print("cx: " + str(cx) + " / cy: " + str(cy) + " / ta: " + str(ta))
-        if ta > 1000:
-            # loding / unloding
-            ser.write(b'S')
-            time.sleep(10)
-            ser.write(b'L')  # loding
-            ser.write(b'U')  # unloding
-
-
+        if ta > 1200:
+            if st == 1:
+                vals[0] = vvals[0]
+                vals[1] = vvals[1]
+                ser.write(b'M')
+                ser.write(bytes(bytearray(vals)))
+            else:
+                data = b''
+                if vvals[0] != 0:
+                    vvals[0] = 0
+                    vvals[1] = 0
+                    ser.write(b'M')
+                    ser.write(bytes(bytearray(vvals)))
+                if lll==0:
+                    ser.write(b'L')
+                    while(data!=b'O'):
+                        try:
+                            data = ser.read(1)  
+                        except ser.SerialTimeoutException:
+                            print("Timeout occurred, no data available")
+                
+                    lll=1
+                else:
+                    ser.write(b'U')
+                    while(data!=b'X'):
+                        try:
+                            data = ser.read(1)  
+                        except ser.SerialTimeoutException:
+                            print("Timeout occurred, no data available")
+                    lll=0
+                vvals[0] = old_R
+                vvals[1] = old_L
+                ser.write(b'M')
+                ser.write(bytes(bytearray(vvals)))
+                st = 1
+        
         elif cx == 0 and cy == 0:
             vals[0] = old_R
             vals[1] = old_L
@@ -115,9 +144,10 @@ while cam.isOpened():
             ser.write(bytes(bytearray(vals)))
             print(bytes(bytearray(vals)))
             print("\n")
+            st = 0
         else:
             # move
-            weight = 0.3
+            weight = 0.4
 
             vals[0] = vals[0] + int((cx - 320) * weight)
             vals[1] = vals[1] - int((cx - 320) * weight)
@@ -140,7 +170,7 @@ while cam.isOpened():
             ser.write(bytes(bytearray(vals)))
             print(bytes(bytearray(vals)))
             print("\n")
-
+            st = 0
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         ser.close()
